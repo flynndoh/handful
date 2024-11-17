@@ -1,8 +1,16 @@
 # Handful
 
+Real-time image processing pipeline to detect hands and estimate their pose in 3D space.
+
+![tracked.png](media/tracked.png)
+
 ## Intended Use
 
 Real-time image processing to control servo motor actuation in 1DOF robotic fingers.
+
+The image processing pipeline looks like this.
+
+![robotic-hand-software-pipeline.png](media/robotic-hand-software-pipeline.png)
 
 ## Get Started 
 
