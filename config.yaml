@@ -1,0 +1,12 @@
+display:
+  window_name: "Hand Tracking"
+  window_size: [800, 600]
+
+sources:
+  mjpeg:
+    default_url: "http://192.168.0.117:8080/stream"
+
+server:
+  host: "0.0.0.0"
+  default_port: 5000
+  frame_queue_size: 10

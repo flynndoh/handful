@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Hand Tracking Stream</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            background: #1a1a1a;
+            color: #fff;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+
+        .container {
+            max-width: 1200px;
+            height: 9%
+        }
+
+        .stream-container {
+            position: relative;
+            margin: 20px 0;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .stream-container img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .stats {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+    </style>
+    <script>
+        function updateStats() {
+            fetch('/stats')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('fps').textContent =
+                        `FPS: ${data.fps}`;
+                    document.getElementById('queue').textContent =
+                        `Queue: ${data.queue_size}`;
+                })
+                .catch(console.error);
+        }
+
+        // Update stats every second
+        setInterval(updateStats, 1000);
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Hand Tracking Stream</h1>
+        </div>
+        <div class="stream-container">
+            <img src="/video_feed" alt="Hand Tracking Stream" />
+            <div class="stats">
+                <div id="fps">FPS: --</div>
+                <div id="queue">Queue: --</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
