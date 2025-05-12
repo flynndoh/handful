@@ -52,7 +52,7 @@ class Config:
                 thread.join(timeout=5.0)
 
 
-@click.group(chain=True, invoke_without_command=True)
+@click.group(chain=True)
 @click.option('--debug/--no-debug', default=False, help='Enable debug mode')
 @click.option('--config', type=click.Path(path_type=Path), help='Configuration file path')
 @click.pass_context
@@ -132,7 +132,7 @@ def serve(ctx: click.Context, port: int, host: str):
     config: Config = ctx.obj
 
     if not config.processor:
-        raise click.UsageError("You must set up a source before starting the server.")
+        raise click.UsageError("You must set up a source before starting the server. Use the 'mjpeg' command first.")
 
     logger.info(f"Starting web server on {host}:{port}")
 
