@@ -76,7 +76,7 @@ def cli(ctx: click.Context, debug: bool, config: Optional[Path]):
 
 
 @cli.command()
-@click.option('--url', required=True, help='MJPEG stream URL')
+@click.option('--url', required=True, help='MJPEG stream URL', type=str)
 @click.pass_context
 def mjpeg(ctx: click.Context, url: str):
     """Set up an MJPEG source"""

@@ -25,7 +25,7 @@ class MJPEGStreamClient(BaseFrameSource):
         Starts the video stream consumption in a separate thread.
         """
         self.running = True
-        self.thread = Thread(target=self._consume_stream, daemon=True)
+        self.thread = Thread(target=self._consume_stream, daemon=True, args=(self.url,))
         self.thread.start()
 
     def stop(self):
@@ -36,7 +36,7 @@ class MJPEGStreamClient(BaseFrameSource):
         if self.thread is not None:
             self.thread.join()
 
-    def _consume_stream(self):
+    def _consume_stream(self, url):
         """
         Consumes the MJPEG stream and decodes frames in real-time.
         """
