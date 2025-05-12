@@ -1,10 +1,12 @@
+import time
+
 import click
-from typing import Optional
+from typing import Optional, List
 import logging
 from pathlib import Path
-
-import cv2
-import yaml
+import threading
+import signal
+from dataclasses import dataclass, field
 
 from handful.core.processor import StreamProcessor
 from handful.core.tracker import HandTracker
@@ -14,78 +16,163 @@ from handful.sources.mjpeg import MJPEGStreamClient
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 
+@dataclass
 class Config:
-    """Holds CLI configuration"""
+    """Holds CLI configuration and pipeline state"""
+    debug: bool = False
+    config_file: Optional[Path] = None
+    processor: Optional['StreamProcessor'] = None
+    running_threads: List[threading.Thread] = field(default_factory=list)
+    shutdown_event: threading.Event = field(default_factory=threading.Event)
+    server: Optional[StreamServer] = None  # Keep reference to server instance
 
-    def __init__(self):
-        self.debug: bool = False
-        self.config_file: Optional[Path] = None
+    def add_thread(self, thread: threading.Thread):
+        """Add a background thread to be joined later"""
+        self.running_threads.append(thread)
+
+    def cleanup(self):
+        """Signal threads to stop and wait for completion"""
+        self.shutdown_event.set()
+
+        # Cleanup server if it exists
+        if self.server:
+            self.server.stop()
+
+        # Cleanup processor if it exists
+        if self.processor:
+            self.processor.stop()
+
+        for thread in self.running_threads:
+            if thread.is_alive():
+                thread.join(timeout=5.0)
 
 
-pass_config = click.make_pass_decorator(Config, ensure=True)
-
-
-def load_config(ctx: click.Context, config_file: Optional[Path]) -> dict:
-    """Load configuration from file if provided"""
-    if config_file and config_file.exists():
-        with open(config_file) as f:
-            return yaml.safe_load(f)
-    return {}
-
-
-@click.group()
+@click.group(chain=True, invoke_without_command=True)
 @click.option('--debug/--no-debug', default=False, help='Enable debug mode')
 @click.option('--config', type=click.Path(path_type=Path), help='Configuration file path')
 @click.pass_context
 def cli(ctx: click.Context, debug: bool, config: Optional[Path]):
-    """Hand tracking system CLI"""
-    ctx.obj = Config()
-    ctx.obj.debug = debug
-    ctx.obj.config_file = config
+    """Pipeline CLI that supports parallel command execution"""
+    ctx.ensure_object(Config)
+    config_obj = ctx.obj
+    config_obj.debug = debug
+    config_obj.config_file = config
 
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    logger.debug(f"Debug mode: {debug}")
-    logger.debug(f"Config file: {config}")
+    def signal_handler(signum, frame):
+        logger.info("Received shutdown signal, cleaning up...")
+        config_obj.cleanup()
+        ctx.exit()
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
 
-@cli.group()
-def source():
-    """Manage frame sources"""
-    pass
-
-
-@source.command()
+@cli.command()
 @click.option('--url', required=True, help='MJPEG stream URL')
-@click.option('--display/--no-display', default=False, help='Show preview window')
-@click.option('--server/--no-server', default=True, help='Start web server')
-@click.option('--port', default=5000, help='Web server port')
-@pass_config
-def mjpeg(config: Config, url: str, display: bool, server: bool, port: int):
-    """Use MJPEG stream as frame source"""
-    cfg = load_config(click.get_current_context(), config.config_file)
+@click.pass_context
+def mjpeg(ctx: click.Context, url: str):
+    """Set up an MJPEG source"""
+    config: Config = ctx.obj
 
-    source_client = MJPEGStreamClient(url)
-    tracker = HandTracker()
-    processor = StreamProcessor(source_client, tracker)
+    config.source_client = MJPEGStreamClient(url)
+    config.tracker = HandTracker()
+    config.processor = StreamProcessor(config.source_client, config.tracker)
 
-    if server:
-        logger.info(f"Starting web server on port {port}")
-        server = StreamServer(processor, port=port)
-        server.start()
-    elif display:
-        logger.info("Starting display mode")
+    # Start the processor
+    config.processor.start()
+    logger.info(f"Source configured with URL: {url}")
+
+
+@cli.command()
+@click.pass_context
+def send_hand_data(ctx: click.Context):
+    """Send the thumb position to the servo control webapp"""
+    config: Config = ctx.obj
+
+    if not config.processor:
+        raise click.UsageError("You must set up a source before running this.")
+
+    queue = config.processor.subscribe('send_hand_data')
+
+    def run():
         try:
-            for processed in processor.process_frames():
-                cv2.imshow("Hand Tracking", processed.frame)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
+            while not config.shutdown_event.is_set():
+                try:
+                    processed = queue.get(timeout=0.1)
+                    if processed.hand_data:
+                        logger.info(processed.hand_data)
+                except:
+                    continue
+        except Exception as e:
+            logger.error(f"Error in hand data thread: {e}")
         finally:
-            cv2.destroyAllWindows()
+            config.processor.unsubscribe('send_hand_data')
+            logger.info("Hand data processing stopped")
 
+    thread = threading.Thread(target=run, daemon=True)
+    config.add_thread(thread)
+    thread.start()
+    logger.info("Hand data processing started in background")
+
+
+@cli.command()
+@click.option('--port', default=5000, help='Web server port')
+@click.option('--host', default='0.0.0.0', help='Host to bind to')
+@click.pass_context
+def serve(ctx: click.Context, port: int, host: str):
+    """Start the web server"""
+    config: Config = ctx.obj
+
+    if not config.processor:
+        raise click.UsageError("You must set up a source before starting the server.")
+
+    logger.info(f"Starting web server on {host}:{port}")
+
+    # Create server instance
+    server = StreamServer(config.processor, host=host, port=port)
+    config.server = server  # Store reference for cleanup
+
+    def run_server():
+        try:
+            server.start()
+        except Exception as e:
+            if not config.shutdown_event.is_set():  # Only log if not shutting down
+                logger.error(f"Error in server thread: {e}")
+        finally:
+            logger.info("Web server stopped")
+
+    # Start server in background thread
+    thread = threading.Thread(target=run_server, daemon=True)
+    config.add_thread(thread)
+    thread.start()
+
+    # Give the server a moment to initialize
+    time.sleep(0.5)
+
+    logger.info("Web server started in background")
+
+@cli.result_callback()
+def process_pipeline(processors, **kwargs):
+    """Keep the pipeline running until interrupted"""
+    if processors:  # Only process if commands were run
+        config = click.get_current_context().obj
+        try:
+            # Block main thread with event wait
+            logger.info("Main thread now waiting until exit is requested.")
+            config.shutdown_event.wait()
+        except KeyboardInterrupt:
+            logger.info("Shutting down...")
+        finally:
+            config.cleanup()
+
+
+if __name__ == '__main__':
+    cli()
