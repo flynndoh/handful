@@ -22,13 +22,13 @@ cd handful
 
 ### Create and activate virtual environment
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # or `.venv\Scripts\activate` on Windows
+uv new
+uv
 ```
 
 ### Install dependencies
 ```bash
-pip install -e ".[dev]"
+uv pip install -e ".[dev]"
 ```
 
 ### Run!
