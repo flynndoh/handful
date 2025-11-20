@@ -311,3 +311,4 @@ pip-selfcheck.json
 
 # ignore all .idea
 .idea/
+.aider*

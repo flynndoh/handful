@@ -12,8 +12,8 @@ def main():
     parser = argparse.ArgumentParser(description="Run hand tracking stream processor with optional configuration.")
     parser.add_argument(
         "--stream_url",
+        default="http://192.168.0.117:8080/stream",
         type=str,
-        required=True,
         help="URL of the MJPEG stream (e.g., 'http://192.168.0.117:8080/stream')."
     )
     parser.add_argument(

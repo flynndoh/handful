@@ -39,6 +39,6 @@ By default, navigate to http://localhost:5000
 
 ### Run the CLI (Work in progress, likely broken)
 ```bash
-handful-cli --help
+handful-cli mjpeg --url http://192.168.0.117:8080/stream serve
 ```
 
